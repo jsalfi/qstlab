@@ -1,3 +1,5 @@
+# Relevant Documentation: SD1 3.x Software for M320xA / M330xA Arbitrary Waveform Generators User's Guide
+
 from enum import Enum
 
 import numpy as np
@@ -5,14 +7,14 @@ import numpy as np
 # Path must be setup before this import
 import keysightSD1
 
-# See section 1.2.2 of the SD1 3.x Software for M320xA / M330xA Arbitrary Waveform Generators User's Guide
+# See section 1.2.2 of the documentation
 MIN_CYCLIC_QUEUE_DURATION_NS = 2000
 
 def get_prescaler(sample_rate_MSps):
     """
     Calculate the prescaler for the given sample rate (in MS/s).
     
-    See section 1.2.3 of the SD1 3.x Software for M320xA / M330xA Arbitrary Waveform Generators User's Guide
+    See section 1.2.3 of the documentation
     
     The effective sampling rate is calculated as:
     
@@ -55,17 +57,23 @@ def create_gaussian(a, b, c, duration_ns, sample_rate_MSps):
     
     return w
     
-def basic_autotrig_oneshot(awg, channel, wave, sample_rate_MSps, delay=0, cycles=1):
+def queue_oneshot(awg, channel, wave, sample_rate_MSps, delay=0, cycles=1, trigger=keysightSD1.SD_TriggerModes.AUTOTRIG, trigger_pxi_line=1, trigger_mode=keysightSD1.SD_TriggerBehaviors.TRIGGER_FALL):
     awg.set_channel_offset(0.0, channel)
     awg.set_channel_amplitude(0.5, channel)
 
     awg.set_channel_wave_shape(keysightSD1.SD_Waveshapes.AOU_AWG, channel)
     awg.awg_queue_config(channel, keysightSD1.SD_QueueMode.ONE_SHOT)
     
+    if trigger == keysightSD1.SD_TriggerModes.EXTTRIG:
+        awg.awg_config_external_trigger(channel, 4000 + trigger_pxi_line, trigger_mode) # See Table 36 of the documentation for why 4000 is added
+    
     wave_awg = awg.upload_waveform(wave)
     
-    auto_trigger = keysightSD1.SD_TriggerModes.AUTOTRIG
     prescaler    = get_prescaler(sample_rate_MSps)
-    awg.awg_queue_waveform(channel, wave_awg, auto_trigger, delay, cycles, prescaler)
+    awg.awg_queue_waveform(channel, wave_awg, trigger, delay, cycles, prescaler)
     
     awg.awg_start(channel)
+
+def trigger_fall(awg, trigger_pxi_line):
+    awg.set_pxi_trigger(0, trigger_pxi_line) # 0 = ON
+    awg.set_pxi_trigger(1, trigger_pxi_line) # 1 = OFF
