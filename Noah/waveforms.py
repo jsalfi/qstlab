@@ -2,6 +2,12 @@ from enum import Enum
 
 import numpy as np
 
+# Path must be setup before this import
+import keysightSD1
+
+# See section 1.2.2 of the SD1 3.x Software for M320xA / M330xA Arbitrary Waveform Generators User's Guide
+MIN_CYCLIC_QUEUE_DURATION_NS = 2000
+
 def get_prescaler(sample_rate_MSps):
     """
     Calculate the prescaler for the given sample rate (in MS/s).
@@ -28,36 +34,38 @@ def get_prescaler(sample_rate_MSps):
 def get_num_points(time_ns, sample_rate_MSps):
     time_step_ns = 1000 / sample_rate_MSps
     return int(time_ns / time_step_ns)
+
+def check_duration(duration_ns):
+    if len(duration_ns) < MIN_CYCLIC_QUEUE_DURATION_NS:
+        raise Exception(f"Not enough data: {duration_ns} ns. Minimum {MIN_CYCLIC_QUEUE_DURATION_NS} ns required.")
     
 def create_sine(period_ns, repetition, sample_rate_MSps):
     n_pts = get_num_points(period_ns * repetition, sample_rate_MSps)
+    
     phi = np.linspace(0, np.pi*2*repetition, n_pts)
     w = np.sin(phi)
     
-    if len(w) < 2000:
-        raise Exception("not enough data")
-        
     return w
 
-
-
-# def get_time_step(prescaler):
-#     """
-#     Calculate the time step between points in nanoseconds based on the prescaler
-#     """
+def create_gaussian(a, b, c, duration_ns, sample_rate_MSps):
+    n_pts = get_num_points(duration_ns, sample_rate_MSps)
     
-#     if prescaler == 0:
-#         return 1 # ns
-#     elif prescaler == 1:
-#         return 5 # ns
-#     elif (prescaler > 1 && prescaler < 4096):
-#         return prescaler * 10 # ns
+    x = np.linspace(-(duration_ns // 2), (duration_ns // 2), n_pts)
+    w = a * np.exp(-(x - b)**2 / (2 * c**2))
     
-#     raise Exception(f"Invalid prescaler: {prescaler}. Prescaler must be between 0 and 4095")
+    return w
+    
+def basic_autotrig_oneshot(awg, channel, wave, sample_rate_MSps, delay=0, cycles=1):
+    awg.set_channel_offset(0.0, channel)
+    awg.set_channel_amplitude(0.5, channel)
 
-# def get_time_step(sample_rate_Msps):
-#     """
-#     Calculate the time step between points in nanoseconds
-#     """
-#     return 1000 / sample_rate_Msps # ns
+    awg.set_channel_wave_shape(keysightSD1.SD_Waveshapes.AOU_AWG, channel)
+    awg.awg_queue_config(channel, keysightSD1.SD_QueueMode.ONE_SHOT)
     
+    wave_awg = awg.upload_waveform(wave)
+    
+    auto_trigger = keysightSD1.SD_TriggerModes.AUTOTRIG
+    prescaler    = get_prescaler(sample_rate_MSps)
+    awg.awg_queue_waveform(channel, wave_awg, auto_trigger, delay, cycles, prescaler)
+    
+    awg.awg_start(channel)
