@@ -1,7 +1,5 @@
 # Relevant Documentation: SD1 3.x Software for M320xA / M330xA Arbitrary Waveform Generators User's Guide
 
-from enum import Enum
-
 import numpy as np
 
 # Path must be setup before this import
