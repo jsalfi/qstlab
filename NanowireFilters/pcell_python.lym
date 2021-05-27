@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="utf-8"?>
+<klayout-macro>
+ <description/>
+ <version/>
+ <category>pymacros</category>
+ <prolog/>
+ <epilog/>
+ <doc/>
+ <autorun>true</autorun>
+ <autorun-early>false</autorun-early>
+ <shortcut/>
+ <show-in-menu>false</show-in-menu>
+ <group-name/>
+ <menu-path/>
+ <interpreter>python</interpreter>
+ <dsl-interpreter-name/>
+ <text>import pya
+import math
+import numpy as np
+"""
+This PCell defines a single meander
+"""
+
+class Meander(pya.PCellDeclarationHelper):
+
+    def __init__(self):
+
+        # Important: initialize the super class
+        super(Meander, self).__init__()
+
+        # declare the parameters
+        self.param("l", self.TypeLayer, "Layer", default = pya.LayerInfo(1, 0))
+        self.param("n_pts", self.TypeInt, "Number of points on meanders", default = 64)
+        self.param("feedline_disp", self.TypeDouble, "Feedline displacement", default = 1)
+        self.param("connect_top", self.TypeBoolean, "Connect to feedline at top?", default = True)
+        self.param("line_length", self.TypeDouble, "Line Length", default = 10)          
+        self.param("length_incl_meanders", self.TypeBoolean, "Length includes meanders?", default = True)
+        self.param("n_lines", self.TypeInt, "Number of lines",  default = 4)
+        #self.param("width", self.TypeDouble, "Width of device", default=-1, optional=True)
+        self.param("line_width", self.TypeDouble, "Line width", default = 0.1) 
+        self.param("line_spacing", self.TypeDouble, "Line spacing", default = 0.5)
+        self.param("meander_radius", self.TypeDouble, "Meander radius", default = 0.25) 
+        #self.param("x", self.TypeDouble, "X position", default = 0)
+        #self.param("y", self.TypeDouble, "Y position", default = 0) 
+        # Not going to bother with a handle for now
+        ###############################################################################
+        # this hidden parameter is used to determine whether the radius has changed
+        # or the "s" handle has been moved
+        # self.param("ru", self.TypeDouble, "Radius", default = 0.0, hidden = True)
+        # self.param("rd", self.TypeDouble, "Double radius", readonly = True)
+        # self.param("s", self.TypeShape, "", default = pya.DPoint(0, 0))
+    
+    def display_text_impl(self):
+        # Provide a descriptive text for the cell
+        return ""
+  
+    def coerce_parameters_impl(self):
+        pass
+  
+    def can_create_from_shape_impl(self):
+        # Implement the "Create PCell from shape" protocol: we can use any shape which 
+        # has a finite bounding box
+        #return self.shape.is_box() or self.shape.is_polygon() or self.shape.is_path()
+        return True
+        
+    def parameters_from_shape_impl(self):
+    # Implement the "Create PCell from shape" protocol: we set r and l from the shape's 
+    # bounding box width and layer
+    #self.r = self.shape.bbox().width() * self.layout.dbu / 2
+    #self.l = self.layout.get_info(self.layer)
+        self.l = self.layout.get_info(self.layer)
+    
+    def transformation_from_shape_impl(self):
+    # Implement the "Create PCell from shape" protocol: we use the center of the shape's
+    # bounding box to determine the transformation
+    #return pya.Trans(self.shape.bbox().center())
+        return pya.Trans(self.shape.bbox().center())
+    
+    def get_cutoff(self, theta):
+        return self.meander_radius* (1-math.cos(theta))
+      
+    def get_theta(self):
+        return math.asin(0.5*self.line_spacing/self.meander_radius)
+  
+    def meander(self, x, y, n_pts, right_meander):
+        n_pts+=1
+        theta = self.get_theta()
+        d_theta = 2*theta/n_pts
+        current_angle = d_theta
+    
+        angles = np.arange(theta, -theta, -d_theta)
+        
+        if n_pts%2 == 0:
+            angles = angles[:-1]
+        else:
+            angles = angles[1:]
+    
+        x_init = self.meander_radius*math.cos(theta)
+        x_arr = self.meander_radius*np.cos(angles)-x_init
+    
+        y_arr = y - (self.meander_radius*np.sin(angles)+self.line_spacing/2)
+        if right_meander:
+            x_arr += x
+        else:
+            x_arr = x-x_arr
+        return x_arr.tolist(), y_arr.tolist()[::-1]
+    
+    def produce_impl(self):
+  
+    # This is the main part of the implementation: create the layout
+
+        if self.length_incl_meanders:
+            cutoff = self.get_cutoff(self.get_theta())
+        if self.feedline_disp &gt; 0:
+            rightwards = True
+        else:
+            rightwards = False
+
+        
+        if self.connect_top:
+            x_pts = [-self.feedline_disp, 0]
+            y_pts = [0, 0]
+            
+        for line in range(self.n_lines):
+            x = x_pts[-1] 
+            y = y_pts[-1] 
+            x_dist = self.line_length
+            if self.length_incl_meanders:
+                if line == 0:
+                    x_dist -= cutoff
+                elif line == self.n_lines-1:
+                    x_dist -= cutoff
+                else:
+                    x_dist -= 2*cutoff
+                if rightwards:
+                    x += x_dist
+                else: 
+                    x -= x_dist
+                x_pts.append(x)
+                y_pts.append(y)
+                if line != self.n_lines-1:
+                    meander_x, meander_y = self.meander(x, y, self.n_pts, rightwards)
+                    x_pts.extend(meander_x)
+                    y_pts.extend(meander_y)
+                    rightwards =  not rightwards
+                    
+        if  not self.connect_top:
+            x = x_pts[-1] 
+            y = y_pts[-1] 
+            x_pts.append(x-self.feedline_disp)
+            y_pts.append(y)
+        
+        pts = [pya.Point.from_dpoint(pya.DPoint(x/self.layout.dbu, y/self.layout.dbu)) for (x, y) in zip(x_pts, y_pts)]
+        #pts = [pya.Point.from_dpoint(pya.DPoint(x/self.layout.dbu, y/self.layout.dbu)) for (x, y) in zip([i/10 for i in range(10)], [i/10 for i in range(10)])]
+        self.cell.shapes(self.l_layer).insert(pya.Path(pts, self.line_width/self.layout.dbu))
+
+
+class MyLib(pya.Library):
+    """
+    The library where we will put the PCell into 
+    """
+
+    def __init__(self):
+  
+        # Set the description
+        self.description = "Meander"
+        
+        # Create the PCell declarations
+        self.layout().register_pcell("Meander", Meander())
+        # That would be the place to put in more PCells ...
+        
+        # Register us with the name "MyLib".
+        # If a library with that name already existed, it will be replaced then.
+        self.register("MyLib")
+
+
+# Instantiate and register the library
+MyLib()
+</text>
+</klayout-macro>
