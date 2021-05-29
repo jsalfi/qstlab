@@ -12,7 +12,7 @@ def get_prescaler(sample_rate_MSps):
     """
     Calculate the prescaler for the given sample rate (in MS/s).
     
-    See section 1.2.3 of the documentation
+    See section 1.2.3 of the AWG documentation for details.
     
     The effective sampling rate is calculated as:
     
@@ -38,7 +38,7 @@ def get_num_points(time_ns, sample_rate_MSps):
 def check_duration(duration_ns):
     if len(duration_ns) < MIN_CYCLIC_QUEUE_DURATION_NS:
         raise Exception(f"Not enough data: {duration_ns} ns. Minimum {MIN_CYCLIC_QUEUE_DURATION_NS} ns required.")
-    
+
 def create_sine(period_ns, repetition, sample_rate_MSps):
     n_pts = get_num_points(period_ns * repetition, sample_rate_MSps)
     
